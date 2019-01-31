@@ -768,7 +768,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
         }
     }
 
-    private void select(boolean oldWakenUp) throws IOException {
+    private void  select(boolean oldWakenUp) throws IOException {
         Selector selector = this.selector;
         try {
             int selectCnt = 0;
@@ -825,12 +825,14 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                 }
 
                 long time = System.nanoTime();
+                //select阻塞生效，并没有发生cup100%bug
                 if (time - TimeUnit.MILLISECONDS.toNanos(timeoutMillis) >= currentTimeNanos) {
-                    // timeoutMillis elapsed without anything selected.
+                    // timeoutMillis elapsed(过去) without anything selected.
                     selectCnt = 1;
-                } else if (SELECTOR_AUTO_REBUILD_THRESHOLD > 0 &&
+                }//出现bug cnt 超过阈值,rebuild selector
+                else if (SELECTOR_AUTO_REBUILD_THRESHOLD > 0 &&
                         selectCnt >= SELECTOR_AUTO_REBUILD_THRESHOLD) {
-                    // The code exists in an extra method to ensure the method is not too big to inline as this
+                    //代码存在于一个额外的方法中，以确保该方法不会太大而无法内联
                     // branch is not very likely to get hit very frequently.
                     selector = selectRebuildSelector(selectCnt);
                     selectCnt = 1;
@@ -840,6 +842,18 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                 currentTimeNanos = time;
             }
 
+            /**
+             * 循环条件：
+             * 1.deadline 之前
+             * 2.没有task
+             * 3.没有被waken up
+             * 4.线程没有被中断
+             * 5.没到时间但是cnt>=selector自动rebuild selector 的阈值
+             *
+             * 出现以上五种情况，外加超时的情况下,cnt = 1
+             */
+
+            //cnt>3 过早返回
             if (selectCnt > MIN_PREMATURE_SELECTOR_RETURNS) {
                 if (logger.isDebugEnabled()) {
                     logger.debug("Selector.select() returned prematurely {} times in a row for Selector {}.",
