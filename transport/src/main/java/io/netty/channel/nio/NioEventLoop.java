@@ -110,6 +110,9 @@ public final class NioEventLoop extends SingleThreadEventLoop {
     /**
      * The NIO {@link Selector}.
      */
+    /**
+     * jdk的selector
+     */
     private Selector selector;
     private Selector unwrappedSelector;
     private SelectedSelectionKeySet selectedKeys;
@@ -146,6 +149,9 @@ public final class NioEventLoop extends SingleThreadEventLoop {
         selectStrategy = strategy;
     }
 
+    /**
+     *包含一个两个selector的封装对象
+     */
     private static final class SelectorTuple {
         final Selector unwrappedSelector;
         final Selector selector;
@@ -172,7 +178,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
         if (DISABLE_KEYSET_OPTIMIZATION) {
             return new SelectorTuple(unwrappedSelector);
         }
-
+        //AccessController：jdk安全控制实现 用于控制对本地文件的访问 doPrivileged（）特权访问
         Object maybeSelectorImplClass = AccessController.doPrivileged(new PrivilegedAction<Object>() {
             @Override
             public Object run() {
@@ -418,11 +424,17 @@ public final class NioEventLoop extends SingleThreadEventLoop {
         }
     }
 
+
+    //线程的run方法 ，在父抽象类 SingleThreadEventLoop 中启动
     @Override
     protected void run() {
         for (;;) {
             try {
                 try {
+                    //selectStrategy 判断select策略
+                    //hasTasks(): taskQueen 是否为空
+                    //selectNowSupplier: 提供一个selectNow方法
+                    //calculateStrategy() 有任务返回selectNow（）的值,没有返回默认值SelectStrategy.SELECT
                     switch (selectStrategy.calculateStrategy(selectNowSupplier, hasTasks())) {
                     case SelectStrategy.CONTINUE:
                         continue;
@@ -765,6 +777,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
 
             for (;;) {
                 long timeoutMillis = (selectDeadLineNanos - currentTimeNanos + 500000L) / 1000000L;
+                //dealine已经过了
                 if (timeoutMillis <= 0) {
                     if (selectCnt == 0) {
                         selector.selectNow();
@@ -777,6 +790,8 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                 // Selector#wakeup. So we need to check task queue again before executing select operation.
                 // If we don't, the task might be pended until select operation was timed out.
                 // It might be pended until idle timeout if IdleStateHandler existed in pipeline.
+
+                //taskqueen中有任务就 select一次  cas确保wakenUp为false
                 if (hasTasks() && wakenUp.compareAndSet(false, true)) {
                     selector.selectNow();
                     selectCnt = 1;
@@ -786,6 +801,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                 int selectedKeys = selector.select(timeoutMillis);
                 selectCnt ++;
 
+                //waken up
                 if (selectedKeys != 0 || oldWakenUp || wakenUp.get() || hasTasks() || hasScheduledTasks()) {
                     // - Selected something,
                     // - waken up by user, or
